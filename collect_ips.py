@@ -43,13 +43,14 @@ def fetch_ips():
         except requests.RequestException:
             continue
 
-# 并发获取延迟，并过滤延迟大于10ms的IP
+# 并发获取延迟，并过滤延迟大于15ms的IP
 def fetch_valid_ip_delays() -> dict:
     ip_delays = {}
     with ThreadPoolExecutor(max_workers=10) as executor:
-        for ip, latency in (future.result() for future in 
-                            [executor.submit(get_ping_latency, ip) for ip in unique_ips]):
-            if latency <= 10:
+        futures = {executor.submit(get_ping_latency, ip): ip for ip in unique_ips}
+        for future in futures:
+            ip, latency = future.result()
+            if latency <= 15:  # 过滤延迟大于15ms的IP
                 ip_delays[ip] = latency
     return ip_delays
 
@@ -62,6 +63,6 @@ if ip_delays:
     with open('ip.txt', 'w') as f:
         for ip, latency in sorted(ip_delays.items(), key=lambda x: x[1]):
             f.write(f'{ip} {latency}ms\n')
-    print(f'已保存 {len(ip_delays)} 个延迟≤10ms的IP到 ip.txt')
+    print(f'已保存 {len(ip_delays)} 个延迟≤15ms的IP到 ip.txt')
 else:
     print('未找到有效的IP地址')
