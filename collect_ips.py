@@ -1,5 +1,4 @@
 import requests
-from bs4 import BeautifulSoup
 import re
 import os
 import time
@@ -26,14 +25,14 @@ unique_ips = set()
 # 用来存储IP地址和它们对应的延迟
 ip_delays = {}
 
-# 获取每个IP地址的延迟
+# 获取每个IP地址的延迟，单位为毫秒，并保留三位小数
 def get_ping_latency(ip):
     try:
         start_time = time.time()
         response = requests.get(f"http://{ip}", timeout=5)
         end_time = time.time()
-        latency = end_time - start_time
-        return ip, latency
+        latency = (end_time - start_time) * 1000  # 转换为毫秒
+        return ip, round(latency, 3)  # 保留三位小数
     except requests.exceptions.RequestException:
         return ip, float('inf')  # 如果请求失败，返回一个很大的延迟
 
@@ -43,7 +42,7 @@ def fetch_ips_and_latency():
         future_to_ip = {executor.submit(get_ping_latency, ip): ip for ip in unique_ips}
         for future in future_to_ip:
             ip, latency = future.result()
-            if latency <= 0.4:  # 如果延迟低于400ms
+            if latency <= 400:  # 如果延迟低于400ms
                 ip_delays[ip] = latency
 
 # 获取IP地址列表
@@ -70,17 +69,11 @@ def get_ip_addresses_from_urls():
 get_ip_addresses_from_urls()
 fetch_ips_and_latency()
 
-# 根据延迟排序，选择延迟最低的50个IP
-sorted_ips_by_latency = sorted(ip_delays.items(), key=lambda x: x[1])
-
-# 限制只写入延迟最低的50个IP地址
-top_50_ips = [ip for ip, _ in sorted_ips_by_latency[:50]]
-
-# 将延迟最低的IP地址写入文件
-if top_50_ips:
+# 将IP和延迟（单位：毫秒）写入文件
+if ip_delays:
     with open('ip.txt', 'w') as file:
-        for ip in top_50_ips:
-            file.write(ip + '\n')
-    print(f'已保存 {len(top_50_ips)} 个延迟最低的IP地址到ip.txt文件。')
+        for ip, latency in ip_delays.items():
+            file.write(f'{ip} {latency}ms\n')  # 延迟单位为毫秒，保留三位小数
+    print(f'已保存 {len(ip_delays)} 个IP和延迟到ip.txt文件。')
 else:
     print('未找到有效的IP地址。')
