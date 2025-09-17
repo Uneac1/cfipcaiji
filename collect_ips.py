@@ -22,15 +22,20 @@ if os.path.exists('ip.txt'):
 # 用集合存储IP地址，自动去重
 unique_ips = set()
 
-# 获取IP延迟
-def get_ping_latency(ip: str) -> tuple[str, float]:
-    try:
-        start = time.time()
-        requests.get(f"http://{ip}", timeout=5)
-        latency = (time.time() - start) * 1000  # 毫秒
-        return ip, round(latency, 3)
-    except requests.RequestException:
-        return ip, float('inf')  # 请求失败返回无限延迟
+# 获取IP延迟（平均延迟）
+def get_ping_latency(ip: str, num_pings: int = 10) -> tuple[str, float]:
+    latencies = []
+    for _ in range(num_pings):
+        try:
+            start = time.time()
+            requests.get(f"http://{ip}", timeout=5)
+            latency = (time.time() - start) * 1000  # 毫秒
+            latencies.append(round(latency, 3))
+        except requests.RequestException:
+            latencies.append(float('inf'))  # 请求失败返回无限延迟
+    # 计算平均延迟
+    avg_latency = sum(latencies) / len(latencies) if latencies else float('inf')
+    return ip, avg_latency
 
 # 从URLs抓取IP地址
 def fetch_ips():
