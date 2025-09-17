@@ -1,7 +1,9 @@
+import requests
+from bs4 import BeautifulSoup
 import re
 import os
-import requests
-import subprocess
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 # 目标URL列表
 urls = [
@@ -21,44 +23,64 @@ if os.path.exists('ip.txt'):
 # 使用集合存储IP地址实现自动去重
 unique_ips = set()
 
-# 同步获取 IP 地址
-def fetch_ips_from_url(url):
+# 用来存储IP地址和它们对应的延迟
+ip_delays = {}
+
+# 获取每个IP地址的延迟
+def get_ping_latency(ip):
     try:
-        response = requests.get(url, timeout=4)
-        if response.status_code == 200:
-            html_content = response.text
-            ip_matches = re.findall(ip_pattern, html_content, re.IGNORECASE)
-            unique_ips.update(ip_matches)
-    except Exception:
-        pass
+        start_time = time.time()
+        response = requests.get(f"http://{ip}", timeout=5)
+        end_time = time.time()
+        latency = end_time - start_time
+        return ip, latency
+    except requests.exceptions.RequestException:
+        return ip, float('inf')  # 如果请求失败，返回一个很大的延迟
 
-# 获取所有 IP 地址
-for url in urls:
-    fetch_ips_from_url(url)
+# 使用线程池来并发获取IP地址和测量延迟
+def fetch_ips_and_latency():
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_ip = {executor.submit(get_ping_latency, ip): ip for ip in unique_ips}
+        for future in future_to_ip:
+            ip, latency = future.result()
+            if latency <= 0.4:  # 如果延迟低于400ms
+                ip_delays[ip] = latency
 
-# 定义一个函数来同步测试 IP 地址的延迟
-def ping_ip(ip):
-    try:
-        result = subprocess.run(['ping', '-c', '1', '-W', '2', ip], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if result.returncode == 0:
-            time_ms = re.search(r'time=(\d+)', result.stdout)
-            if time_ms:
-                return int(time_ms.group(1))
-        return None
-    except Exception:
-        return None
+# 获取IP地址列表
+def get_ip_addresses_from_urls():
+    for url in urls:
+        try:
+            # 发送HTTP请求获取网页内容
+            response = requests.get(url, timeout=5)
+            
+            # 确保请求成功
+            if response.status_code == 200:
+                # 获取网页的文本内容
+                html_content = response.text
+                
+                # 使用正则表达式查找IP地址
+                ip_matches = re.findall(ip_pattern, html_content, re.IGNORECASE)
+                
+                # 将找到的IP添加到集合中（自动去重）
+                unique_ips.update(ip_matches)
+        except requests.exceptions.RequestException as e:
+            print(f'请求 {url} 失败: {e}')
 
-# 同步过滤 IP 地址
-def filter_ips_by_latency(ip):
-    latency = ping_ip(ip)
-    if latency and 100 < latency < 400:
-        return ip
-    return None
+# 主程序流程
+get_ip_addresses_from_urls()
+fetch_ips_and_latency()
 
-# 过滤有效的 IP 地址
-valid_ips = [ip for ip in unique_ips if filter_ips_by_latency(ip)]
+# 根据延迟排序，选择延迟最低的50个IP
+sorted_ips_by_latency = sorted(ip_delays.items(), key=lambda x: x[1])
 
-# 将筛选后的 IP 地址写入文件
-if valid_ips:
+# 限制只写入延迟最低的50个IP地址
+top_50_ips = [ip for ip, _ in sorted_ips_by_latency[:50]]
+
+# 将延迟最低的IP地址写入文件
+if top_50_ips:
     with open('ip.txt', 'w') as file:
-        file.write("\n".join(valid_ips) + "\n")
+        for ip in top_50_ips:
+            file.write(ip + '\n')
+    print(f'已保存 {len(top_50_ips)} 个延迟最低的IP地址到ip.txt文件。')
+else:
+    print('未找到有效的IP地址。')
