@@ -55,7 +55,7 @@ def fetch_valid_ip_delays() -> dict:
         futures = {executor.submit(get_ping_latency, ip): ip for ip in unique_ips}
         for future in futures:
             ip, latency = future.result()
-            if latency <= 50:  # 过滤掉高于18ms的IP
+            if latency <= 15:  # 过滤掉高于18ms的IP
                 ip_delays[ip] = latency
     return ip_delays
 
