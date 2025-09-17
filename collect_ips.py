@@ -45,9 +45,12 @@ if unique_ips:
     # 按IP地址的数字顺序排序（非字符串顺序）
     sorted_ips = sorted(unique_ips, key=lambda ip: [int(part) for part in ip.split('.')])
     
+    # 限制只写入前50个IP地址
+    top_50_ips = sorted_ips[:50]
+    
     with open('ip.txt', 'w') as file:
-        for ip in sorted_ips:
+        for ip in top_50_ips:
             file.write(ip + '\n')
-    print(f'已保存 {len(sorted_ips)} 个唯一IP地址到ip.txt文件。')
+    print(f'已保存 {len(top_50_ips)} 个唯一IP地址到ip.txt文件。')
 else:
     print('未找到有效的IP地址。')
