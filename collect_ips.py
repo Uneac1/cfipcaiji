@@ -1,9 +1,7 @@
 import re
 import os
-import aiohttp
-import asyncio
+import requests
 import subprocess
-from aiohttp import ClientSession
 
 # 目标URL列表
 urls = [
@@ -23,30 +21,25 @@ if os.path.exists('ip.txt'):
 # 使用集合存储IP地址实现自动去重
 unique_ips = set()
 
-# 异步获取 IP 地址
-async def fetch_ips_from_url(session: ClientSession, url: str):
+# 同步获取 IP 地址
+def fetch_ips_from_url(url):
     try:
-        async with session.get(url, timeout=4) as response:
-            if response.status == 200:
-                html_content = await response.text()
-                ip_matches = re.findall(ip_pattern, html_content, re.IGNORECASE)
-                unique_ips.update(ip_matches)
+        response = requests.get(url, timeout=4)
+        if response.status_code == 200:
+            html_content = response.text
+            ip_matches = re.findall(ip_pattern, html_content, re.IGNORECASE)
+            unique_ips.update(ip_matches)
     except Exception:
         pass
 
-# 获取 IP 地址的异步任务
-async def fetch_all_ips():
-    async with ClientSession() as session:
-        tasks = [fetch_ips_from_url(session, url) for url in urls]
-        await asyncio.gather(*tasks)
+# 获取所有 IP 地址
+for url in urls:
+    fetch_ips_from_url(url)
 
-# 使用异步方式获取 IP 地址
-asyncio.run(fetch_all_ips())
-
-# 定义一个函数来异步测试 IP 地址的延迟
-async def ping_ip(ip: str) -> int:
+# 定义一个函数来同步测试 IP 地址的延迟
+def ping_ip(ip):
     try:
-        result = await asyncio.to_thread(subprocess.run, ['ping', '-c', '1', '-W', '2', ip], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(['ping', '-c', '1', '-W', '2', ip], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             time_ms = re.search(r'time=(\d+)', result.stdout)
             if time_ms:
@@ -55,21 +48,15 @@ async def ping_ip(ip: str) -> int:
     except Exception:
         return None
 
-# 异步过滤 IP 地址
-async def filter_ips_by_latency(ip: str):
-    latency = await ping_ip(ip)
+# 同步过滤 IP 地址
+def filter_ips_by_latency(ip):
+    latency = ping_ip(ip)
     if latency and 100 < latency < 400:
         return ip
     return None
 
-# 并发化 ping 测试
-async def filter_valid_ips():
-    tasks = [filter_ips_by_latency(ip) for ip in unique_ips]
-    valid_ips = await asyncio.gather(*tasks)
-    return [ip for ip in valid_ips if ip is not None]
-
-# 获取有效的 IP 地址
-valid_ips = asyncio.run(filter_valid_ips())
+# 过滤有效的 IP 地址
+valid_ips = [ip for ip in unique_ips if filter_ips_by_latency(ip)]
 
 # 将筛选后的 IP 地址写入文件
 if valid_ips:
