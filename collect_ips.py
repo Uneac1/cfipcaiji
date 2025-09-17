@@ -23,7 +23,7 @@ if os.path.exists('ip.txt'):
 unique_ips = set()
 
 # 获取IP延迟（60次ping，每次间隔15秒，计算平均延迟）
-def get_ping_latency(ip: str, num_pings: int = 60, interval: int = 15) -> tuple[str, float]:
+def get_ping_latency(ip: str, num_pings: int = 60, interval: int = 5) -> tuple[str, float]:
     latencies = []
     for _ in range(num_pings):
         try:
