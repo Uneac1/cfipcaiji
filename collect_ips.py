@@ -42,7 +42,7 @@ def fetch_ips_and_latency():
         future_to_ip = {executor.submit(get_ping_latency, ip): ip for ip in unique_ips}
         for future in future_to_ip:
             ip, latency = future.result()
-            if latency <= 400:  # 如果延迟低于400ms
+            if latency <= 10:  # 如果延迟小于或等于10ms才保存
                 ip_delays[ip] = latency
 
 # 获取IP地址列表
@@ -69,11 +69,14 @@ def get_ip_addresses_from_urls():
 get_ip_addresses_from_urls()
 fetch_ips_and_latency()
 
-# 将IP和延迟（单位：毫秒）写入文件
+# 将IP和延迟（单位：毫秒）按延迟从低到高排序后写入文件
 if ip_delays:
+    # 对字典按延迟值排序（按延迟从低到高）
+    sorted_ip_delays = sorted(ip_delays.items(), key=lambda x: x[1])
+
     with open('ip.txt', 'w') as file:
-        for ip, latency in ip_delays.items():
+        for ip, latency in sorted_ip_delays:
             file.write(f'{ip} {latency}ms\n')  # 延迟单位为毫秒，保留三位小数
-    print(f'已保存 {len(ip_delays)} 个IP和延迟到ip.txt文件。')
+    print(f'已保存 {len(sorted_ip_delays)} 个IP和延迟到ip.txt文件。')
 else:
     print('未找到有效的IP地址。')
