@@ -3,6 +3,7 @@ import re
 import os
 import subprocess
 import time
+import concurrent.futures
 
 # 目标URL列表
 urls = [
@@ -23,7 +24,7 @@ if os.path.exists('ip.txt'):
 unique_ips = set()
 
 # 获取 IP 地址
-for url in urls:
+def fetch_ips_from_url(url):
     try:
         # 发送HTTP请求获取网页内容
         response = requests.get(url, timeout=5)
@@ -40,7 +41,10 @@ for url in urls:
             unique_ips.update(ip_matches)
     except requests.exceptions.RequestException as e:
         print(f'请求 {url} 失败: {e}')
-        continue
+
+# 使用并发处理来获取 IP 地址
+with concurrent.futures.ThreadPoolExecutor() as executor:
+    executor.map(fetch_ips_from_url, urls)
 
 # 定义一个函数来测试 IP 地址的延迟
 def ping_ip(ip):
@@ -59,26 +63,25 @@ def ping_ip(ip):
         print(f"无法ping {ip}: {e}")
         return None
 
-# 测量每个 IP 的延迟并存储
-ip_with_latency = []
-
-for ip in unique_ips:
-    print(f"正在 ping {ip}...")
+# 并行化 ping 测试
+def filter_ips_by_latency(ip):
     latency = ping_ip(ip)
-    if latency is not None:
-        ip_with_latency.append((ip, latency))
+    if latency and 100 < latency < 400:
+        return ip
+    return None
 
-# 根据延迟时间升序排序（延迟低的排前）
-sorted_ips_by_latency = sorted(ip_with_latency, key=lambda x: x[1])
+# 使用线程池并发处理 ping 测试
+valid_ips = []
+with concurrent.futures.ThreadPoolExecutor() as executor:
+    results = executor.map(filter_ips_by_latency, unique_ips)
 
-# 只保留前 50 个延迟最低的 IP 地址
-top_50_ips = sorted_ips_by_latency[:50]
+# 过滤掉返回值为 None 的项
+valid_ips = [ip for ip in results if ip is not None]
 
-# 将去重后的 IP 地址按延迟从低到高写入文件
-if top_50_ips:
+# 将筛选后的 IP 地址写入文件
+if valid_ips:
     with open('ip.txt', 'w') as file:
-        for ip, latency in top_50_ips:
-            file.write(f"{ip} - {latency}ms\n")
-    print(f'已保存 {len(top_50_ips)} 个延迟最低的IP地址到 ip.txt 文件。')
+        file.write("\n".join(valid_ips) + "\n")
+    print(f'已保存 {len(valid_ips)} 个符合条件的IP地址到 ip.txt 文件。')
 else:
-    print('未找到有效的IP地址。')
+    print('未找到符合条件的IP地址。')
