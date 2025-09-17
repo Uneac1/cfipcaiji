@@ -12,71 +12,56 @@ urls = [
     'https://www.wetest.vip/page/cloudflare/address_v4.html'
 ]
 
-# 正则表达式用于匹配IP地址
-ip_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
+# 匹配IPv4地址的正则表达式
+ip_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 
-# 检查ip.txt文件是否存在,如果存在则删除它
+# 删除旧的 ip.txt 文件
 if os.path.exists('ip.txt'):
     os.remove('ip.txt')
 
-# 使用集合存储IP地址实现自动去重
+# 用集合存储IP地址，自动去重
 unique_ips = set()
 
-# 用来存储IP地址和它们对应的延迟
-ip_delays = {}
-
-# 获取每个IP地址的延迟，单位为毫秒，并保留三位小数
-def get_ping_latency(ip):
+# 获取IP延迟
+def get_ping_latency(ip: str) -> tuple[str, float]:
     try:
-        start_time = time.time()
-        response = requests.get(f"http://{ip}", timeout=5)
-        end_time = time.time()
-        latency = (end_time - start_time) * 1000  # 转换为毫秒
-        return ip, round(latency, 3)  # 保留三位小数
-    except requests.exceptions.RequestException:
-        return ip, float('inf')  # 如果请求失败，返回一个很大的延迟
+        start = time.time()
+        requests.get(f"http://{ip}", timeout=5)
+        latency = (time.time() - start) * 1000  # 毫秒
+        return ip, round(latency, 3)
+    except requests.RequestException:
+        return ip, float('inf')  # 请求失败返回无限延迟
 
-# 使用线程池来并发获取IP地址和测量延迟
-def fetch_ips_and_latency():
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_ip = {executor.submit(get_ping_latency, ip): ip for ip in unique_ips}
-        for future in future_to_ip:
-            ip, latency = future.result()
-            if latency <= 10:  # 如果延迟小于或等于10ms才保存
-                ip_delays[ip] = latency
-
-# 获取IP地址列表
-def get_ip_addresses_from_urls():
+# 从URLs抓取IP地址
+def fetch_ips():
     for url in urls:
         try:
-            # 发送HTTP请求获取网页内容
-            response = requests.get(url, timeout=5)
-            
-            # 确保请求成功
-            if response.status_code == 200:
-                # 获取网页的文本内容
-                html_content = response.text
-                
-                # 使用正则表达式查找IP地址
-                ip_matches = re.findall(ip_pattern, html_content, re.IGNORECASE)
-                
-                # 将找到的IP添加到集合中（自动去重）
-                unique_ips.update(ip_matches)
-        except requests.exceptions.RequestException as e:
-            print(f'请求 {url} 失败: {e}')
+            resp = requests.get(url, timeout=5)
+            if resp.status_code == 200:
+                ips = re.findall(ip_pattern, resp.text)
+                unique_ips.update(ips)
+        except requests.RequestException:
+            continue
 
-# 主程序流程
-get_ip_addresses_from_urls()
-fetch_ips_and_latency()
+# 并发获取延迟，并过滤延迟大于10ms的IP
+def fetch_valid_ip_delays() -> dict:
+    ip_delays = {}
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        for ip, latency in (future.result() for future in 
+                            [executor.submit(get_ping_latency, ip) for ip in unique_ips]):
+            if latency <= 10:
+                ip_delays[ip] = latency
+    return ip_delays
 
-# 将IP和延迟（单位：毫秒）按延迟从低到高排序后写入文件
+# 主流程
+fetch_ips()
+ip_delays = fetch_valid_ip_delays()
+
+# 写入文件，按延迟升序排序
 if ip_delays:
-    # 对字典按延迟值排序（按延迟从低到高）
-    sorted_ip_delays = sorted(ip_delays.items(), key=lambda x: x[1])
-
-    with open('ip.txt', 'w') as file:
-        for ip, latency in sorted_ip_delays:
-            file.write(f'{ip} {latency}ms\n')  # 延迟单位为毫秒，保留三位小数
-    print(f'已保存 {len(sorted_ip_delays)} 个IP和延迟到ip.txt文件。')
+    with open('ip.txt', 'w') as f:
+        for ip, latency in sorted(ip_delays.items(), key=lambda x: x[1]):
+            f.write(f'{ip} {latency}ms\n')
+    print(f'已保存 {len(ip_delays)} 个延迟≤10ms的IP到 ip.txt')
 else:
-    print('未找到有效的IP地址。')
+    print('未找到有效的IP地址')
