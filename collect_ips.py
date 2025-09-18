@@ -3,6 +3,7 @@ import re
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import subprocess
 
 # 目标URL列表
 urls = [
@@ -22,21 +23,28 @@ if os.path.exists('ip.txt'):
 # 用集合存储IP地址，自动去重
 unique_ips = set()
 
-# 获取IP延迟（5次ping，每次间隔5秒，计算平均延迟）
+# 获取IP延迟（通过 ping 命令，5次ping，每次间隔1秒，计算平均延迟）
 def get_ping_latency(ip: str, num_pings: int = 9, interval: int = 1) -> tuple[str, float]:
-    latencies = []
-    for _ in range(num_pings):
-        try:
-            start = time.time()
-            requests.get(f"http://{ip}", timeout=5)
-            latency = (time.time() - start) * 1000  # 毫秒
-            latencies.append(round(latency, 3))
-            time.sleep(interval)  # 每次ping之间的间隔时间
-        except requests.RequestException:
-            latencies.append(float('inf'))  # 请求失败返回无限延迟
-    # 计算平均延迟
-    avg_latency = sum(latencies) / len(latencies) if latencies else float('inf')
-    return ip, avg_latency
+    try:
+        # 执行 ping 命令
+        result = subprocess.run(
+            ["ping", "-c", str(num_pings), "-i", str(interval), ip],
+            capture_output=True, text=True, timeout=10
+        )
+        
+        if result.returncode == 0:
+            # 提取 ping 命令输出中的延迟
+            lines = result.stdout.splitlines()
+            latencies = [float(re.search(r'time=(\d+\.\d+)', line).group(1)) for line in lines if "time=" in line]
+            avg_latency = sum(latencies) / len(latencies) if latencies else float('inf')
+            return ip, avg_latency
+        else:
+            return ip, float('inf')
+    except subprocess.TimeoutExpired:
+        return ip, float('inf')
+    except Exception as e:
+        print(f"Error while pinging {ip}: {e}")
+        return ip, float('inf')
 
 # 从URLs抓取IP地址，避免无效请求并提高异常处理
 def fetch_ips():
@@ -65,7 +73,7 @@ ip_delays = fetch_ip_delays()
 
 # 只保存延迟最低的前20个IP地址
 if ip_delays:
-    top_ips = sorted(ip_delays.items(), key=lambda x: x[1])[:20]  # 按延迟升序排列并选择前20个
+    top_ips = sorted(ip_delays.items(), key=lambda x: x[1])[:5]  # 按延迟升序排列并选择前20个
     
     # 写入文件
     with open('ip.txt', 'w') as f:
