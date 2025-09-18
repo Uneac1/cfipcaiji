@@ -23,7 +23,7 @@ if os.path.exists('ip.txt'):
 unique_ips = set()
 
 # 获取IP延迟（5次ping，每次间隔5秒，计算平均延迟）
-def get_ping_latency(ip: str, num_pings: int = 5, interval: int = 1) -> tuple[str, float]:
+def get_ping_latency(ip: str, num_pings: int = 2, interval: int = 1) -> tuple[str, float]:
     latencies = []
     for _ in range(num_pings):
         try:
@@ -31,7 +31,7 @@ def get_ping_latency(ip: str, num_pings: int = 5, interval: int = 1) -> tuple[st
             requests.get(f"http://{ip}", timeout=5)
             latency = (time.time() - start) * 1000  # 毫秒
             latencies.append(round(latency, 3))
-            time.sleep(interval)  # 每次ping之间的间隔时间为5秒
+            time.sleep(interval)  # 每次ping之间的间隔时间
         except requests.RequestException:
             latencies.append(float('inf'))  # 请求失败返回无限延迟
     # 计算平均延迟
@@ -56,18 +56,21 @@ def fetch_ip_delays() -> dict:
         futures = {executor.submit(get_ping_latency, ip): ip for ip in unique_ips}
         for future in as_completed(futures):  # 使用as_completed更高效
             ip, latency = future.result()
-            ip_delays[ip] = latency  # 不进行过滤，直接保存所有IP的延迟
+            ip_delays[ip] = latency  # 保存所有IP的延迟
     return ip_delays
 
 # 主流程
 fetch_ips()
 ip_delays = fetch_ip_delays()
 
-# 写入文件，按延迟升序排序
+# 只保存延迟最低的前20个IP地址
 if ip_delays:
+    top_ips = sorted(ip_delays.items(), key=lambda x: x[1])[:20]  # 按延迟升序排列并选择前20个
+    
+    # 写入文件
     with open('ip.txt', 'w') as f:
-        for ip, latency in sorted(ip_delays.items(), key=lambda x: x[1]):
+        for ip, latency in top_ips:
             f.write(f'{ip} {latency}ms\n')
-    print(f'已保存 {len(ip_delays)} 个IP到 ip.txt')
+    print(f'已保存 {len(top_ips)} 个IP到 ip.txt')
 else:
     print('未找到有效的IP地址')
