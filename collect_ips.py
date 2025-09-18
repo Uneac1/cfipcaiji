@@ -2,7 +2,7 @@ import requests
 import re
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 目标URL列表
 urls = [
@@ -22,8 +22,8 @@ if os.path.exists('ip.txt'):
 # 用集合存储IP地址，自动去重
 unique_ips = set()
 
-# 获取IP延迟（30秒内的平均延迟）
-def get_ping_latency(ip: str, num_pings: int = 60) -> tuple[str, float]:
+# 获取IP延迟（5次ping，每次间隔5秒，计算平均延迟）
+def get_ping_latency(ip: str, num_pings: int = 5, interval: int = 5) -> tuple[str, float]:
     latencies = []
     for _ in range(num_pings):
         try:
@@ -31,13 +31,14 @@ def get_ping_latency(ip: str, num_pings: int = 60) -> tuple[str, float]:
             requests.get(f"http://{ip}", timeout=5)
             latency = (time.time() - start) * 1000  # 毫秒
             latencies.append(round(latency, 3))
+            time.sleep(interval)  # 每次ping之间的间隔时间为5秒
         except requests.RequestException:
             latencies.append(float('inf'))  # 请求失败返回无限延迟
     # 计算平均延迟
     avg_latency = sum(latencies) / len(latencies) if latencies else float('inf')
     return ip, avg_latency
 
-# 从URLs抓取IP地址
+# 从URLs抓取IP地址，避免无效请求并提高异常处理
 def fetch_ips():
     for url in urls:
         try:
@@ -45,29 +46,28 @@ def fetch_ips():
             if resp.status_code == 200:
                 ips = re.findall(ip_pattern, resp.text)
                 unique_ips.update(ips)
-        except requests.RequestException:
-            continue
+        except requests.RequestException as e:
+            print(f"警告: 获取IP失败，URL: {url}, 错误: {e}")
 
-# 并发获取延迟并过滤掉高于18ms的IP
-def fetch_valid_ip_delays() -> dict:
+# 并发获取延迟
+def fetch_ip_delays() -> dict:
     ip_delays = {}
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(get_ping_latency, ip): ip for ip in unique_ips}
-        for future in futures:
+        for future in as_completed(futures):  # 使用as_completed更高效
             ip, latency = future.result()
-            if latency <= 20:  # 过滤掉高于18ms的IP
-                ip_delays[ip] = latency
+            ip_delays[ip] = latency  # 不进行过滤，直接保存所有IP的延迟
     return ip_delays
 
 # 主流程
 fetch_ips()
-ip_delays = fetch_valid_ip_delays()
+ip_delays = fetch_ip_delays()
 
 # 写入文件，按延迟升序排序
 if ip_delays:
     with open('ip.txt', 'w') as f:
         for ip, latency in sorted(ip_delays.items(), key=lambda x: x[1]):
             f.write(f'{ip} {latency}ms\n')
-    print(f'已保存 {len(ip_delays)} 个延迟≤18ms的IP到 ip.txt')
+    print(f'已保存 {len(ip_delays)} 个IP到 ip.txt')
 else:
     print('未找到有效的IP地址')
