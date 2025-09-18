@@ -23,7 +23,7 @@ if os.path.exists('ip.txt'):
 unique_ips = set()
 
 # 获取IP延迟（30秒内的平均延迟）
-def get_ping_latency(ip: str, num_pings: int = 30) -> tuple[str, float]:
+def get_ping_latency(ip: str, num_pings: int = 60) -> tuple[str, float]:
     latencies = []
     for _ in range(num_pings):
         try:
@@ -55,7 +55,7 @@ def fetch_valid_ip_delays() -> dict:
         futures = {executor.submit(get_ping_latency, ip): ip for ip in unique_ips}
         for future in futures:
             ip, latency = future.result()
-            if latency <= 15:  # 过滤掉高于18ms的IP
+            if latency <= 25:  # 过滤掉高于18ms的IP
                 ip_delays[ip] = latency
     return ip_delays
 
