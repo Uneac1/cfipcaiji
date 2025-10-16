@@ -65,7 +65,7 @@ ip_delays = fetch_ip_delays()
 
 # 只保存延迟最低的前20个IP地址
 if ip_delays:
-    top_ips = sorted(ip_delays.items(), key=lambda x: x[1])[:5]  # 按延迟升序排列并选择前20个
+    top_ips = sorted(ip_delays.items(), key=lambda x: x[1])[:10]  # 按延迟升序排列并选择前20个
     
     # 写入文件
     with open('ip.txt', 'w') as f:
